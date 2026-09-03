@@ -1,21 +1,16 @@
 #![no_std]
 #![no_main]
 
+mod app;
 mod debouncer;
-use debouncer::{ButtonEvent, ButtonMonitor};
+mod ui;
 
-use embedded_graphics::{
-    mono_font::{ascii::FONT_6X10, MonoTextStyle},
-    pixelcolor::BinaryColor,
-    prelude::*,
-    text::Text,
-};
+use debouncer::{ButtonEvent, ButtonMonitor};
 
 use bme280::i2c::BME280;
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
 use core::cell::RefCell;
-use core::fmt::Write as _;
 use cortex_m_rt::entry;
 use critical_section::Mutex;
 use embedded_hal_bus::i2c::RefCellDevice;
@@ -23,6 +18,7 @@ use static_cell::StaticCell;
 
 use panic_persist as _;
 
+use app::AppState;
 use embedded_hal::delay::DelayNs;
 use hal::{
     clocks::init_clocks_and_plls, gpio::Pins, pac, sio::Sio, timer::Timer, usb::UsbBus,
@@ -30,7 +26,8 @@ use hal::{
 };
 use rp2040_hal::fugit::RateExtU32;
 use rp2040_hal::{self as hal, adc::AdcPin, rom_data, Adc};
-use station_core::{raw_to_percent, Calibration, Ema};
+use ui::render::{render_now, render_read_failed};
+use ui::UiState;
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
 
@@ -42,9 +39,6 @@ const DEBOUNCE_TICKS: u64 = 10_000;
 const MULTI_CLICKS_WINDOW_TICKS: u64 = 400_000;
 const HOLD_TICKS: u64 = 1_500_000;
 // --- Other consts ---
-const OVERSAMPLE_COUNT: u32 = 32;
-const ALPHA: f32 = 0.2;
-const PRINT_RATE: u64 = 500_000;
 const POLL_BUTTON_TICKS: u64 = 5_000;
 const DISPLAY_PERIOD_TICKS: u64 = 50_000; //instead of delay_ms(50)
 const BME_READ_TICKS: u64 = 1_000_000;
@@ -233,11 +227,8 @@ fn main() -> ! {
     )
     .unwrap();
 
-    //EMA init
-    let mut ema1 = Ema::new(ALPHA);
-    let mut ema2 = Ema::new(ALPHA);
-    //needed time for different events
-    let mut info_last_time = 0u64;
+    let mut app = AppState::new();
+    let ui = UiState::new();
     let mut button_last_time = 0u64;
     let mut display_last_time = 0u64;
 
@@ -246,19 +237,10 @@ fn main() -> ! {
     let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
     display.init().unwrap();
-    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-
     let mut bme_delay = PollingDelay { timer: &timer };
     let mut bme = BME280::new_primary(i2c_for_bme);
     bme.init(&mut bme_delay).unwrap();
     let mut bme_last_time = 0u64;
-
-    //Calibration init
-    let mut cal1 = Calibration::full_range();
-    let mut cal2 = Calibration::full_range();
-    let mut sweep1 = Calibration::start_sweep();
-    let mut sweep2 = Calibration::start_sweep();
-    let mut calibrating = false;
 
     loop {
         poll_usb();
@@ -267,27 +249,7 @@ fn main() -> ! {
             button_last_time = now;
             match button.update(now).unwrap() {
                 ButtonEvent::HoldTriggered => {
-                    if calibrating {
-                        if sweep1.is_valid() && sweep2.is_valid() {
-                            cal1 = sweep1;
-                            cal2 = sweep2;
-                            defmt::info!(
-                                "Calibration saved: pot1 {}...{}  pot2 {}...{}",
-                                cal1.min,
-                                cal1.max,
-                                cal2.min,
-                                cal2.max
-                            );
-                        } else {
-                            defmt::warn!("Calibration incomplete - pot wasn't swept, keeping previous values");
-                        }
-                        calibrating = false;
-                    } else {
-                        sweep1 = Calibration::start_sweep();
-                        sweep2 = Calibration::start_sweep();
-                        calibrating = true;
-                        defmt::info!("calibration started - sweep both pots, hold again to finish");
-                    }
+                    app.handle_hold();
                 }
                 ButtonEvent::Clicks(n) if n >= 3 => {
                     defmt::warn!("button pressed more than 3 times — rebooting into flash");
@@ -305,7 +267,6 @@ fn main() -> ! {
         }
         if now.wrapping_sub(bme_last_time) >= BME_READ_TICKS {
             bme_last_time = now;
-            display.clear(BinaryColor::Off).unwrap();
             match bme.measure(&mut bme_delay) {
                 Ok(m) => {
                     // m.temperature (°C), m.humidity (%RH), m.pressure (Pa)
@@ -315,59 +276,32 @@ fn main() -> ! {
                         m.humidity,
                         m.pressure
                     );
-                    let mut temp_buffer = heapless::String::<32>::new();
-                    let mut hum_buffer = heapless::String::<32>::new();
-                    let mut press_buffer = heapless::String::<32>::new();
-
-                    let _ = write!(temp_buffer, "Temp: {:.2} C", m.temperature);
-                    let _ = write!(hum_buffer, "Hum: {:.2} %", m.humidity);
-                    let _ = write!(press_buffer, "Pressure: {:.2} hPa", m.pressure / 100.0);
-                    //drawing
-                    Text::new(&temp_buffer, Point::new(0, 15), style).draw(&mut display).unwrap();
-                    Text::new(&hum_buffer, Point::new(0, 30), style).draw(&mut display).unwrap();
-                    Text::new(&press_buffer, Point::new(0, 45), style).draw(&mut display).unwrap();
+                    match ui.page() {
+                        ui::Page::Now => {
+                            render_now(&mut display, m.temperature, m.humidity, m.pressure);
+                        }
+                    }
                 }
                 Err(_) => {
                     defmt::warn!("BME280 read failed");
-                    Text::new("Read failed", Point::new(50, 30), style).draw(&mut display).unwrap();
+                    render_read_failed(&mut display);
                 }
             }
-            display.flush().unwrap();
         }
         if now.wrapping_sub(display_last_time) >= DISPLAY_PERIOD_TICKS {
             //oversampling
             let mut pot1_sum: u32 = 0; //u32 because worst case scenario is 131_040 which surpasses u16::MAX
             let mut pot2_sum: u32 = 0;
 
-            for _ in 0..OVERSAMPLE_COUNT {
+            for _ in 0..app::OVERSAMPLE_COUNT {
                 let raw_val1 = adc.read(&mut adc_pin0).unwrap();
                 let raw_val2 = adc.read(&mut adc_pin1).unwrap();
                 pot1_sum += raw_val1 as u32;
                 pot2_sum += raw_val2 as u32;
             }
-            let pot1_raw = (pot1_sum / OVERSAMPLE_COUNT) as u16;
-            let pot2_raw = (pot2_sum / OVERSAMPLE_COUNT) as u16;
-
-            //EMA
-            let pot1_smoothed = ema1.update(pot1_raw as f32);
-            let pot2_smoothed = ema2.update(pot2_raw as f32);
-
-            if calibrating {
-                sweep1.observe(pot1_smoothed as u16);
-                sweep2.observe(pot2_smoothed as u16);
-            }
-
-            let pct1 = raw_to_percent(pot1_smoothed as u16, cal1.min, cal1.max);
-            let pct2 = raw_to_percent(pot2_smoothed as u16, cal2.min, cal2.max);
-
-            if now - info_last_time >= PRINT_RATE {
-                info_last_time = now;
-                defmt::info!(
-                    "ema1={=u16} ema2={=u16}",
-                    pot1_smoothed as u16,
-                    pot2_smoothed as u16,
-                );
-            }
+            let pot1_raw = (pot1_sum / app::OVERSAMPLE_COUNT) as u16;
+            let pot2_raw = (pot2_sum / app::OVERSAMPLE_COUNT) as u16;
+            let _ = app.update_inputs(pot1_raw, pot2_raw, now);
             display_last_time = now;
         }
     }

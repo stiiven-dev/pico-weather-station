@@ -1,6 +1,6 @@
 # pico-weather-station
 
-BME280 environmental sensor + OLED, with a multi-page UI navigated by the same two pots from `pico-pot-meter` — no debug probe required.
+BME280 environmental sensor + OLED, with a multipage UI navigated by the same two pots from `pico-pot-meter` — no debug probe required.
 
 <!-- TODO: hero photo of the breadboard -->
 `docs/images/breadboard.jpg`
@@ -13,7 +13,7 @@ BME280 environmental sensor + OLED, with a multi-page UI navigated by the same t
 - Four pages, cycled with pot #1: **Now** (live temp/humidity/pressure), **Min/Max** (session extremes), **Trend** (60-sample rolling graph), **About** (firmware version + git hash).
 - Pot #2 sets the sample interval; button freezes the current page (handy for actually reading the trend graph instead of watching it scroll).
 - Dew point and sea-level-adjusted pressure computed in [`crates/station-core`](crates/station-core), unit-tested against known reference values on the host.
-- **Graceful sensor-fault recovery**: unplug the BME280 mid-run and the display switches to an error page instead of hanging or panicking — replug it and it recovers on its own, no reboot needed. This is the actual point of the project; most hobby firmware just `unwrap()`s on the first bad I²C read and dies.
+- **Graceful sensor-fault recovery**: unplug the BME280 mid-run and the display switches to an error page instead of hanging or panicking — replug it, and it recovers on its own, no reboot needed. This is the actual point of the project; most hobby firmware just `unwrap()`s on the first bad I²C read and dies.
 - Two I²C devices sharing one bus (BME280 + OLED) — the first project in this series that needs the shared-bus pattern instead of owning a peripheral outright.
 - Same USB-only dev loop as every project before this one: `defmt-serial` logging, `panic-persist` crash capture, no SWD probe.
 
@@ -94,9 +94,9 @@ pico-weather-station/
 │   └── src/lib.rs          #   dew_point_c(), sea_level_pressure() — host-tested
 └── firmware/
     └── src/
-        ├── main.rs         # wiring: shared I2C bus, page state machine, error handling
-        └── examples/
-            └── i2c_scan.rs # bus scanner — your diagnostic tool if a device goes missing
+    │   ├── main.rs         # wiring: shared I2C bus, page state machine, error handling
+    └── examples/
+        └── i2c_scan.rs # bus scanner — your diagnostic tool if a device goes missing
 ```
 
 `station-core` holds the two pieces of real math this project needs (dew point via the Magnus formula, sea-level-adjusted pressure) — both pure functions, both tested against known reference values on the host, same pattern as `pot-core`'s `raw_to_percent`. Everything involving the shared I²C bus, sensor error handling, and page rendering stays in `firmware`, since none of it can be meaningfully tested without real hardware.
@@ -111,11 +111,18 @@ cargo test -p station-core --target x86_64-unknown-linux-gnu
 `firmware/` has no host tests — the shared-bus behavior and fault recovery
 specifically need real hardware (and a real fault, i.e. an unplugged wire) to 
 verify.
+But if you want to test and scan the i2c bus:
+
+Run the i2c shell script in another terminal to catch then:
+```bash
+cd firmware
+cargo run --example i2c_scan
+```
 
 ## Known limitations
 
 - The BME280 must be powered from 3.3 V only; never feed it from 5 V.
-- The I²C bus is shared and can become flaky with long leads or poor grounding.
+- The I2C bus is shared and can become flaky with long leads or poor grounding.
 - The project intentionally avoids SWD probes; serial logs and the bootloader flow are the debugging path.
 - The OLED is best updated at a moderate refresh rate so the bus and CPU remain responsive.
 - Sensor faults are handled gracefully, but the application is still a prototype and not production-hardened.
