@@ -1,0 +1,189 @@
+//! Pure logic for pico-pot-meter: no HAL, no hardware, no_std-compatible.
+//! Everything here takes plain numbers in and returns plain numbers out,
+//! so it's testable with `cargo test` on the host — no board required.
+#![cfg_attr(not(test), no_std)]
+/// Map a raw ADC reading to a 0-100 percentage, given calibrated min/max
+/// bounds. Handles both wiring directions:
+/// - `min < max`: normal pot, raw counts increase as % increases.
+/// - `min > max`: inverted pot (wired backwards, or CCW = 100%) — this is
+///   just `min`/`max` swapped from the caller's point of view, and the
+///   math below handles it without a separate code path.
+///   Always clamps to 0..=100, so a raw reading outside the calibrated
+///   range (noise, or calibration that didn't quite reach the physical
+///   stop) never produces a nonsense percentage.
+pub fn raw_to_percent(raw: u16, min: u16, max: u16) -> u8 {
+    if min == max {
+        return 0;
+    }
+
+    let (low, high, inv) = if min < max {
+        (min, max, false)
+    } else {
+        (max, min, true)
+    };
+    let clamped = raw.clamp(low, high);
+    let span = (high - low) as u32;
+    let offset = (clamped - low) as u32;
+    let res = (offset * 100) / span;
+    let pct = if inv { 100 - res } else { res };
+
+    pct as u8
+}
+
+/// Simple exponential moving average filter for smoothing ADC noise.
+/// `alpha` is the weight given to each new sample (0.0..=1.0) — lower
+/// values smooth harder but respond to real changes more slowly.
+#[derive(Copy, Clone)]
+pub struct Ema {
+    alpha: f32,
+    value: Option<f32>,
+}
+
+impl Ema {
+    pub const fn new(alpha: f32) -> Self {
+        Self { alpha, value: None }
+    }
+
+    pub fn update(&mut self, sample: f32) -> f32 {
+        let filtered = match self.value {
+            None => sample, //first value , nothing to average against
+            Some(prev) => prev + self.alpha * (sample - prev),
+        };
+        self.value = Some(filtered);
+        filtered
+    }
+}
+
+pub fn bar_fill_height(pct: u8, max_height: u32) -> u32 {
+    let pct = pct.min(100) as u32;
+    (max_height * pct) / 100
+}
+
+#[derive(Copy, Clone)]
+pub struct Calibration {
+    pub min: u16,
+    pub max: u16,
+}
+
+impl Calibration {
+    pub fn full_range() -> Self {
+        Self { min: 0, max: 4095 }
+    }
+
+    pub fn start_sweep() -> Self {
+        Self {
+            min: u16::MAX,
+            max: 0,
+        }
+    }
+
+    pub fn observe(&mut self, raw: u16) {
+        self.min = self.min.min(raw);
+        self.max = self.max.max(raw);
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.min < self.max
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn midpoint_maps_to_fifty_percent() {
+        assert_eq!(raw_to_percent(2048, 0, 4095), 50);
+    }
+
+    #[test]
+    fn clamps_below_calibrated_min() {
+        // raw below `min` (e.g. pot settled slightly past where calibration
+        // caught it) must still report 0, not wrap or underflow.
+        assert_eq!(raw_to_percent(0, 100, 4095), 0);
+    }
+
+    #[test]
+    fn clamps_above_calibrated_max() {
+        assert_eq!(raw_to_percent(4095, 0, 4000), 100);
+    }
+
+    #[test]
+    fn inverted_pot_at_raw_min_reads_100_percent() {
+        // min > max signals the pot is wired/read backwards: the raw
+        // minimum should now correspond to 100%, not 0%.
+        assert_eq!(raw_to_percent(0, 4095, 0), 100);
+    }
+
+    #[test]
+    fn inverted_pot_at_raw_max_reads_0_percent() {
+        assert_eq!(raw_to_percent(4095, 4095, 0), 0);
+    }
+
+    #[test]
+    fn degenerate_calibration_reports_zero_not_panic() {
+        assert_eq!(raw_to_percent(2048, 100, 100), 0);
+    }
+
+    #[test]
+    fn ema_converges_toward_a_constant_input() {
+        let mut ema = Ema::new(0.2);
+        let mut last = ema.update(0.0);
+        for _ in 0..50 {
+            last = ema.update(100.0);
+        }
+        assert!(
+            (last - 100.0).abs() < 1.0,
+            "expected convergence near 100, got {last}"
+        );
+    }
+
+    #[test]
+    fn bar_height_zero_percent_is_zero_pixels() {
+        assert_eq!(bar_fill_height(0, 50), 0);
+    }
+
+    #[test]
+    fn bar_height_hundred_percent_is_full_height() {
+        assert_eq!(bar_fill_height(100, 50), 50);
+    }
+
+    #[test]
+    fn bar_height_fifty_percent_is_half_height() {
+        assert_eq!(bar_fill_height(50, 50), 25);
+    }
+
+    #[test]
+    fn bar_height_clamps_above_100_percent() {
+        // Shouldn't happen given raw_to_percent's own clamping, but a
+        // bar-height function that trusts its input blindly is a bug
+        // waiting for a future caller — clamp defensively here too.
+        assert_eq!(bar_fill_height(150, 50), 50);
+    }
+
+    #[test]
+    fn calibration_widens_as_samples_come_in() {
+        let mut cal = Calibration::start_sweep();
+        cal.observe(1500);
+        cal.observe(300);
+        cal.observe(3900);
+        cal.observe(2000); // inside the current range — shouldn't change bounds
+        assert_eq!(cal.min, 300);
+        assert_eq!(cal.max, 3900);
+    }
+
+    #[test]
+    fn calibration_single_sample_is_invalid() {
+        // pot never actually moved during the sweep window
+        let mut cal = Calibration::start_sweep();
+        cal.observe(2048);
+        assert!(!cal.is_valid());
+    }
+
+    #[test]
+    fn calibration_after_real_sweep_is_valid() {
+        let mut cal = Calibration::start_sweep();
+        cal.observe(100);
+        cal.observe(4000);
+        assert!(cal.is_valid());
+    }
+}
