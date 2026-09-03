@@ -12,7 +12,7 @@
 
 set -u
 
-ELF="${1:-target/thumbv6m-none-eabi/debug/pico-pot-meter}"
+ELF="${1:-target/thumbv6m-none-eabi/debug/pico-weather-station}"
 CANDIDATES=(/dev/ttyACM0 /dev/ttyACM1)
 BAUD=115200
 

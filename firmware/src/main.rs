@@ -12,23 +12,26 @@ use embedded_graphics::{
     text::Text,
 };
 
+use bme280::i2c::BME280;
 use ssd1306::{prelude::*, I2CDisplayInterface, Ssd1306};
 
 use core::cell::RefCell;
 use core::fmt::Write as _;
 use cortex_m_rt::entry;
 use critical_section::Mutex;
+use embedded_hal_bus::i2c::RefCellDevice;
 use static_cell::StaticCell;
 
 use panic_persist as _;
 
+use embedded_hal::delay::DelayNs;
 use hal::{
     clocks::init_clocks_and_plls, gpio::Pins, pac, sio::Sio, timer::Timer, usb::UsbBus,
     watchdog::Watchdog,
 };
-use station_core::{bar_fill_height, raw_to_percent, Calibration, Ema};
 use rp2040_hal::fugit::RateExtU32;
 use rp2040_hal::{self as hal, adc::AdcPin, rom_data, Adc};
+use station_core::{raw_to_percent, Calibration, Ema};
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
 
@@ -45,11 +48,25 @@ const ALPHA: f32 = 0.2;
 const PRINT_RATE: u64 = 500_000;
 const POLL_BUTTON_TICKS: u64 = 5_000;
 const DISPLAY_PERIOD_TICKS: u64 = 50_000; //instead of delay_ms(50)
-const BAR_WIDTH: u32 = 20;
-const BAR_MAX_HEIGHT: u32 = 30;
-const BAR_Y_BASE: i32 = 40; // bottom of the bar area
-
+const BME_READ_TICKS: u64 = 1_000_000;
 struct DefmtUsbWriter;
+
+struct PollingDelay<'a> {
+    timer: &'a Timer,
+}
+
+impl<'a> DelayNs for PollingDelay<'a> {
+    fn delay_ns(&mut self, ns: u32) {
+        // Timer ticks are microseconds (same convention as the other
+        // *_TICKS constants) — round up so we never wait slightly less
+        // than requested.
+        let wait_ticks = (ns as u64 + 999) / 1000;
+        let start = self.timer.get_counter().ticks();
+        while self.timer.get_counter().ticks().wrapping_sub(start) < wait_ticks {
+            poll_usb(); //keep usb alive
+        }
+    }
+}
 
 impl embedded_io::ErrorType for DefmtUsbWriter {
     type Error = core::convert::Infallible;
@@ -101,56 +118,6 @@ fn poll_usb() {
             usb_dev.poll(&mut [serial]);
         }
     });
-}
-
-fn draw_bars<D>(
-    display: &mut D,
-    pot1_pct: u8,
-    pot2_pct: u8,
-    calibrating: bool,
-) -> Result<(), D::Error>
-where
-    D: DrawTarget<Color = BinaryColor>,
-{
-    display.clear(BinaryColor::Off)?;
-    draw_one_bar(display, 10, pot1_pct)?;
-    draw_one_bar(display, 70, pot2_pct)?;
-    if calibrating {
-        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-        Text::new("CAL", Point::new(40, 30), style).draw(display)?;
-    }
-    Ok(())
-}
-
-fn draw_one_bar<D>(display: &mut D, x: i32, pct: u8) -> Result<(), D::Error>
-where
-    D: DrawTarget<Color = BinaryColor>,
-{
-    let fill_height = bar_fill_height(pct, BAR_MAX_HEIGHT);
-
-    // outline, full height
-    Rectangle::new(
-        Point::new(x, BAR_Y_BASE - BAR_MAX_HEIGHT as i32),
-        Size::new(BAR_WIDTH, BAR_MAX_HEIGHT),
-    )
-    .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-    .draw(display)?;
-
-    // filled portion, grows upward from the base
-    Rectangle::new(
-        Point::new(x, BAR_Y_BASE - fill_height as i32),
-        Size::new(BAR_WIDTH, fill_height),
-    )
-    .into_styled(PrimitiveStyle::with_fill(BinaryColor::On))
-    .draw(display)?;
-
-    // percentage label underneath
-    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    let mut buf = heapless::String::<8>::new();
-    let _ = write!(buf, "{}%", pct);
-    Text::new(&buf, Point::new(x, BAR_Y_BASE + 10), style).draw(display)?;
-
-    Ok(())
 }
 
 static WRITER: StaticCell<DefmtUsbWriter> = StaticCell::new();
@@ -210,6 +177,11 @@ fn main() -> ! {
         &mut pac.RESETS,
         &clocks.peripheral_clock,
     );
+    //shared i2c bus
+    let shared_i2c = RefCell::new(i2c);
+
+    let i2c_for_bme = RefCellDevice::new(&shared_i2c);
+    let i2c_for_oled = RefCellDevice::new(&shared_i2c);
 
     //Enable ADC peripheral
     let mut adc = Adc::new(pac.ADC, &mut pac.RESETS);
@@ -271,10 +243,16 @@ fn main() -> ! {
     let mut display_last_time = 0u64;
 
     //Display init
-    let interface = I2CDisplayInterface::new(i2c);
+    let interface = I2CDisplayInterface::new(i2c_for_oled);
     let mut display = Ssd1306::new(interface, DisplaySize128x64, DisplayRotation::Rotate0)
         .into_buffered_graphics_mode();
     display.init().unwrap();
+    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+
+    let mut bme_delay = PollingDelay { timer: &timer };
+    let mut bme = BME280::new_primary(i2c_for_bme);
+    bme.init(&mut bme_delay).unwrap();
+    let mut bme_last_time = 0u64;
 
     //Calibration init
     let mut cal1 = Calibration::full_range();
@@ -326,7 +304,36 @@ fn main() -> ! {
                 ButtonEvent::None => {}
             }
         }
+        if now.wrapping_sub(bme_last_time) >= BME_READ_TICKS {
+            bme_last_time = now;
 
+            match bme.measure(&mut bme_delay) {
+                Ok(m) => {
+                    // m.temperature (°C), m.humidity (%RH), m.pressure (Pa)
+                    defmt::info!(
+                        "bme t={=f32}C rh={=f32}% p={=f32}Pa",
+                        m.temperature,
+                        m.humidity,
+                        m.pressure
+                    );
+                    let mut temp_buffer = heapless::String::<32>::new();
+                    let mut hum_buffer = heapless::String::<32>::new();
+                    let mut press_buffer = heapless::String::<32>::new();
+
+                    let _ = write!(temp_buffer, "Temp: {} C", m.temperature);
+                    let _ = write!(hum_buffer, "Hum: {} C", m.humidity);
+                    let _ = write!(press_buffer, "Pressure: {} C", m.pressure);
+                    //drawing
+                    Text::new(&temp_buffer, Point::new(0, 15), style);
+                    Text::new(&hum_buffer, Point::new(0, 30), style);
+                    Text::new(&press_buffer, Point::new(0, 45), style);
+                }
+                Err(_) => {
+                    defmt::warn!("BME280 read failed");
+                    Text::new("Read failed", Point::new(50, 30), style);
+                }
+            }
+        }
         if now.wrapping_sub(display_last_time) >= DISPLAY_PERIOD_TICKS {
             //oversampling
             let mut pot1_sum: u32 = 0; //u32 because worst case scenario is 131_040 which surpasses u16::MAX
@@ -358,12 +365,10 @@ fn main() -> ! {
                 defmt::info!(
                     "ema1={=u16} ema2={=u16}",
                     pot1_smoothed as u16,
-                    pot2_smoothed as u16
+                    pot2_smoothed as u16,
                 );
             }
             display_last_time = now;
-            //drawing
-            draw_bars(&mut display, pct1, pct2, calibrating).unwrap();
             display.flush().unwrap();
         }
     }
