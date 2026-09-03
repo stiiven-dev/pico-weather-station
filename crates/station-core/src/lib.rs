@@ -30,6 +30,15 @@ pub fn raw_to_percent(raw: u16, min: u16, max: u16) -> u8 {
     pct as u8
 }
 
+pub fn page_index_from_percent(pct : u8 , num_pages : usize) -> usize {
+    if num_pages==0 {
+        return 0;
+    }
+    let pct = pct.min(100) as usize; //avoid degenerate values
+    let idx = (pct * num_pages) / 101 ;
+    idx.min(num_pages - 1)
+}
+
 /// Simple exponential moving average filter for smoothing ADC noise.
 /// `alpha` is the weight given to each new sample (0.0..=1.0) — lower
 /// values smooth harder but respond to real changes more slowly.
@@ -185,5 +194,44 @@ mod tests {
         cal.observe(100);
         cal.observe(4000);
         assert!(cal.is_valid());
+    }
+
+    #[test]
+    fn zero_percent_is_first_page() {
+        assert_eq!(page_index_from_percent(0, 4), 0);
+    }
+
+    #[test]
+    fn hundred_percent_is_last_page() {
+        assert_eq!(page_index_from_percent(100, 4), 3);
+    }
+
+    #[test]
+    fn never_exceeds_bounds_even_with_a_bad_input() {
+        assert_eq!(page_index_from_percent(255, 4), 3);
+    }
+
+    #[test]
+    fn is_monotonic_non_decreasing_across_the_full_sweep() {
+        let mut last = 0;
+        for pct in 0..=100u8 {
+            let idx = page_index_from_percent(pct, 4);
+            assert!(idx >= last, "page index went backwards at {pct}%");
+            last = idx;
+        }
+    }
+
+    #[test]
+    fn every_page_is_reachable_across_the_full_sweep() {
+        let mut seen = [false; 4];
+        for pct in 0..=100u8 {
+            seen[page_index_from_percent(pct, 4)] = true;
+        }
+        assert!(seen.iter().all(|&s| s), "not every page was reachable: {seen:?}");
+    }
+
+    #[test]
+    fn single_page_is_always_index_zero() {
+        assert_eq!(page_index_from_percent(50, 1), 0);
     }
 }

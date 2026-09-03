@@ -25,11 +25,11 @@ use hal::{
     watchdog::Watchdog,
 };
 use rp2040_hal::fugit::RateExtU32;
-use rp2040_hal::{self as hal, adc::AdcPin, rom_data, Adc};
+use rp2040_hal::{self as hal, adc::AdcPin, Adc};
 use ui::render::{render_now, render_read_failed};
-use ui::UiState;
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
+use crate::ui::render::render_placeholder;
 
 type UsbState = (UsbDevice<'static, UsbBus>, SerialPort<'static, UsbBus>);
 static USB_STATE: Mutex<RefCell<Option<UsbState>>> = Mutex::new(RefCell::new(None));
@@ -228,7 +228,6 @@ fn main() -> ! {
     .unwrap();
 
     let mut app = AppState::new();
-    let ui = UiState::new();
     let mut button_last_time = 0u64;
     let mut display_last_time = 0u64;
 
@@ -241,6 +240,9 @@ fn main() -> ! {
     let mut bme = BME280::new_primary(i2c_for_bme);
     bme.init(&mut bme_delay).unwrap();
     let mut bme_last_time = 0u64;
+    let mut last_temp = 0.0f32;
+    let mut last_humidity = 0.0f32;
+    let mut last_pressure = 0.0f32;
 
     loop {
         poll_usb();
@@ -251,17 +253,7 @@ fn main() -> ! {
                 ButtonEvent::HoldTriggered => {
                     app.handle_hold();
                 }
-                ButtonEvent::Clicks(n) if n >= 3 => {
-                    defmt::warn!("button pressed more than 3 times — rebooting into flash");
-                    // Give the USB writer a chance to flush the log line above
-                    // before we reset (best-effort; no delay primitive wired
-                    // in yet, so this is a very rough flush attempt).
-                    poll_usb();
-                    rom_data::reset_to_usb_boot(0, 0);
-                }
-                ButtonEvent::Clicks(n) => {
-                    defmt::info!("clicked {} time(s)", n);
-                }
+                ButtonEvent::Clicks(n) => app.handle_clicks(n),
                 ButtonEvent::None => {}
             }
         }
@@ -276,11 +268,9 @@ fn main() -> ! {
                         m.humidity,
                         m.pressure
                     );
-                    match ui.page() {
-                        ui::Page::Now => {
-                            render_now(&mut display, m.temperature, m.humidity, m.pressure);
-                        }
-                    }
+                    last_temp = m.temperature;
+                    last_humidity = m.humidity;
+                    last_pressure = m.pressure;
                 }
                 Err(_) => {
                     defmt::warn!("BME280 read failed");
@@ -302,7 +292,13 @@ fn main() -> ! {
             let pot1_raw = (pot1_sum / app::OVERSAMPLE_COUNT) as u16;
             let pot2_raw = (pot2_sum / app::OVERSAMPLE_COUNT) as u16;
             let _ = app.update_inputs(pot1_raw, pot2_raw, now);
-            display_last_time = now;
+            match app.ui.page {
+                ui::Page::Now => { render_now(&mut display, last_temp, last_humidity, last_pressure); }
+                ui::Page::MinMax => { render_placeholder(&mut display, "Min/Max").ok(); }
+                ui::Page::Trend => { render_placeholder(&mut display, "Trend").ok(); }
+                ui::Page::About => { render_placeholder(&mut display, "About").ok(); }
+            }
         }
+        display_last_time = now;
     }
 }

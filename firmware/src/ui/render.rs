@@ -58,3 +58,12 @@ where
         .unwrap();
     display.flush().unwrap();
 }
+//Quick stub, replace per-page later
+pub fn render_placeholder<D>(display: &mut D, label: &str) -> Result<(), D::Error>
+where D: DrawTarget<Color = BinaryColor>,
+{
+    display.clear(BinaryColor::Off)?;
+    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+    Text::new(label, Point::new(10, 30), style).draw(display)?;
+    Ok(())
+}

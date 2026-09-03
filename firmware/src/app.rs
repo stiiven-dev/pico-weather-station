@@ -1,4 +1,7 @@
+use rp2040_hal::rom_data;
 use station_core::{raw_to_percent, Calibration, Ema};
+use crate::poll_usb;
+use crate::ui::UiState;
 
 pub const OVERSAMPLE_COUNT: u32 = 32;
 pub const ALPHA: f32 = 0.2;
@@ -13,6 +16,7 @@ pub struct AppState {
     pub sweep2: Calibration,
     pub calibrating: bool,
     pub info_last_time: u64,
+    pub ui: UiState
 }
 
 impl AppState {
@@ -26,6 +30,7 @@ impl AppState {
             sweep2: Calibration::start_sweep(),
             calibrating: false,
             info_last_time: 0,
+            ui: UiState::new()
         }
     }
 
@@ -53,6 +58,21 @@ impl AppState {
         }
     }
 
+    pub fn handle_clicks(&mut self, n: u8) {
+        match n {
+            1 => self.ui.toggle_freeze(),
+            n if n >=3 => {
+                defmt::warn!("button pressed more than 3 times — rebooting into flash");
+                // Give the USB writer a chance to flush the log line above
+                // before we reset (best-effort; no delay primitive wired
+                // in yet, so this is a very rough flush attempt).
+                poll_usb();
+                rom_data::reset_to_usb_boot(0, 0);
+            }
+            _ => {}
+        }
+    }
+
     pub fn update_inputs(&mut self, pot1_raw: u16, pot2_raw: u16, now: u64) -> (u16, u16, u8, u8) {
         let pot1_smoothed = self.ema1.update(pot1_raw as f32);
         let pot2_smoothed = self.ema2.update(pot2_raw as f32);
@@ -64,6 +84,10 @@ impl AppState {
 
         let pct1 = raw_to_percent(pot1_smoothed as u16, self.cal1.min, self.cal1.max);
         let pct2 = raw_to_percent(pot2_smoothed as u16, self.cal2.min, self.cal2.max);
+
+        if !self.calibrating {
+            self.ui.update_page(pct1);
+        }
 
         if now - self.info_last_time >= PRINT_RATE {
             self.info_last_time = now;
