@@ -8,7 +8,6 @@ use embedded_graphics::{
     mono_font::{ascii::FONT_6X10, MonoTextStyle},
     pixelcolor::BinaryColor,
     prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
     text::Text,
 };
 
@@ -217,7 +216,7 @@ fn main() -> ! {
     defmt_serial::defmt_serial(WRITER.init(DefmtUsbWriter));
 
     wait_for_usb_settle(&timer, 3_000_000);
-    defmt::info!("pico-pot-meter is up!");
+    defmt::info!("pico-weather-station is up!");
 
     if let Some(msg) = panic_persist::get_panic_message_utf8() {
         defmt::error!("previous boot panicked: {}", msg);
@@ -306,7 +305,7 @@ fn main() -> ! {
         }
         if now.wrapping_sub(bme_last_time) >= BME_READ_TICKS {
             bme_last_time = now;
-
+            display.clear(BinaryColor::Off).unwrap();
             match bme.measure(&mut bme_delay) {
                 Ok(m) => {
                     // m.temperature (°C), m.humidity (%RH), m.pressure (Pa)
@@ -320,19 +319,20 @@ fn main() -> ! {
                     let mut hum_buffer = heapless::String::<32>::new();
                     let mut press_buffer = heapless::String::<32>::new();
 
-                    let _ = write!(temp_buffer, "Temp: {} C", m.temperature);
-                    let _ = write!(hum_buffer, "Hum: {} C", m.humidity);
-                    let _ = write!(press_buffer, "Pressure: {} C", m.pressure);
+                    let _ = write!(temp_buffer, "Temp: {:.2} C", m.temperature);
+                    let _ = write!(hum_buffer, "Hum: {:.2} %", m.humidity);
+                    let _ = write!(press_buffer, "Pressure: {:.2} hPa", m.pressure / 100.0);
                     //drawing
-                    Text::new(&temp_buffer, Point::new(0, 15), style);
-                    Text::new(&hum_buffer, Point::new(0, 30), style);
-                    Text::new(&press_buffer, Point::new(0, 45), style);
+                    Text::new(&temp_buffer, Point::new(0, 15), style).draw(&mut display).unwrap();
+                    Text::new(&hum_buffer, Point::new(0, 30), style).draw(&mut display).unwrap();
+                    Text::new(&press_buffer, Point::new(0, 45), style).draw(&mut display).unwrap();
                 }
                 Err(_) => {
                     defmt::warn!("BME280 read failed");
-                    Text::new("Read failed", Point::new(50, 30), style);
+                    Text::new("Read failed", Point::new(50, 30), style).draw(&mut display).unwrap();
                 }
             }
+            display.flush().unwrap();
         }
         if now.wrapping_sub(display_last_time) >= DISPLAY_PERIOD_TICKS {
             //oversampling
@@ -369,7 +369,6 @@ fn main() -> ! {
                 );
             }
             display_last_time = now;
-            display.flush().unwrap();
         }
     }
 }

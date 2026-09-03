@@ -30,6 +30,7 @@ embedded-graphics = "0.8.2"
 ssd1306 = "0.10.0"
 
 bme280 = "0.5.1"
+panic-halt = "1.0.0"
 
 # cargo build/run
 [profile.dev]
