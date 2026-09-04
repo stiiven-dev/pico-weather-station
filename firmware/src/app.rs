@@ -1,7 +1,7 @@
-use rp2040_hal::rom_data;
-use station_core::{raw_to_percent, Calibration, Ema};
 use crate::poll_usb;
 use crate::ui::UiState;
+use rp2040_hal::rom_data;
+use station_core::{raw_to_percent, Calibration, Ema};
 
 pub const OVERSAMPLE_COUNT: u32 = 32;
 pub const ALPHA: f32 = 0.2;
@@ -16,7 +16,7 @@ pub struct AppState {
     pub sweep2: Calibration,
     pub calibrating: bool,
     pub info_last_time: u64,
-    pub ui: UiState
+    pub ui: UiState,
 }
 
 impl AppState {
@@ -30,7 +30,7 @@ impl AppState {
             sweep2: Calibration::start_sweep(),
             calibrating: false,
             info_last_time: 0,
-            ui: UiState::new()
+            ui: UiState::new(),
         }
     }
 
@@ -61,7 +61,7 @@ impl AppState {
     pub fn handle_clicks(&mut self, n: u8) {
         match n {
             1 => self.ui.toggle_freeze(),
-            n if n >=3 => {
+            n if n >= 3 => {
                 defmt::warn!("button pressed more than 3 times — rebooting into flash");
                 // Give the USB writer a chance to flush the log line above
                 // before we reset (best-effort; no delay primitive wired

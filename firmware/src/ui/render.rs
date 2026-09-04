@@ -20,31 +20,34 @@ pub fn render_now<DI>(
     temperature: f32,
     humidity: f32,
     pressure_pa: f32,
+    frozen: bool,
 ) where
     DI: WriteOnlyDataCommand,
 {
-    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    display.clear(BinaryColor::Off).unwrap();
+    if !frozen {
+        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+        display.clear(BinaryColor::Off).unwrap();
 
-    let mut temp_buffer = heapless::String::<32>::new();
-    let mut hum_buffer = heapless::String::<32>::new();
-    let mut press_buffer = heapless::String::<32>::new();
+        let mut temp_buffer = heapless::String::<32>::new();
+        let mut hum_buffer = heapless::String::<32>::new();
+        let mut press_buffer = heapless::String::<32>::new();
 
-    let _ = write!(temp_buffer, "Temp: {:.2} C", temperature);
-    let _ = write!(hum_buffer, "Hum: {:.2} %", humidity);
-    let _ = write!(press_buffer, "Pressure: {:.2} hPa", pressure_pa / 100.0);
+        let _ = write!(temp_buffer, "Temp: {:.2} C", temperature);
+        let _ = write!(hum_buffer, "Hum: {:.2} %", humidity);
+        let _ = write!(press_buffer, "Pressure: {:.2} hPa", pressure_pa / 100.0);
 
-    Text::new(&temp_buffer, Point::new(0, 15), style)
-        .draw(display)
-        .unwrap();
-    Text::new(&hum_buffer, Point::new(0, 30), style)
-        .draw(display)
-        .unwrap();
-    Text::new(&press_buffer, Point::new(0, 45), style)
-        .draw(display)
-        .unwrap();
+        Text::new(&temp_buffer, Point::new(0, 15), style)
+            .draw(display)
+            .unwrap();
+        Text::new(&hum_buffer, Point::new(0, 30), style)
+            .draw(display)
+            .unwrap();
+        Text::new(&press_buffer, Point::new(0, 45), style)
+            .draw(display)
+            .unwrap();
 
-    display.flush().unwrap();
+        display.flush().unwrap();
+    }
 }
 
 pub fn render_read_failed<DI>(display: &mut DisplayType<DI>)
@@ -60,7 +63,8 @@ where
 }
 //Quick stub, replace per-page later
 pub fn render_placeholder<D>(display: &mut D, label: &str) -> Result<(), D::Error>
-where D: DrawTarget<Color = BinaryColor>,
+where
+    D: DrawTarget<Color = BinaryColor>,
 {
     display.clear(BinaryColor::Off)?;
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);

@@ -7,13 +7,13 @@ pub enum Page {
     Now,
     MinMax,
     Trend,
-    About
+    About,
 }
 
 #[derive(Clone, Copy)]
 pub struct UiState {
     pub page: Page,
-    pub frozen: bool
+    pub frozen: bool,
 }
 
 impl Page {
@@ -24,13 +24,16 @@ impl Page {
             0 => Page::Now,
             1 => Page::MinMax,
             2 => Page::Trend,
-            _ => Page::About
+            _ => Page::About,
         }
     }
 }
 impl UiState {
     pub const fn new() -> Self {
-        Self { page: Page::Now , frozen: false }
+        Self {
+            page: Page::Now,
+            frozen: false,
+        }
     }
 
     /// Call every tick with pot #1's current percentage. Updates the
@@ -48,5 +51,7 @@ impl UiState {
         self.frozen = !self.frozen;
     }
 
-    pub fn page(&self) -> Page {self.page}
+    pub fn page(&self) -> Page {
+        self.page
+    }
 }

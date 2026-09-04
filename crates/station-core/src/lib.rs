@@ -30,12 +30,12 @@ pub fn raw_to_percent(raw: u16, min: u16, max: u16) -> u8 {
     pct as u8
 }
 
-pub fn page_index_from_percent(pct : u8 , num_pages : usize) -> usize {
-    if num_pages==0 {
+pub fn page_index_from_percent(pct: u8, num_pages: usize) -> usize {
+    if num_pages == 0 {
         return 0;
     }
     let pct = pct.min(100) as usize; //avoid degenerate values
-    let idx = (pct * num_pages) / 101 ;
+    let idx = (pct * num_pages) / 101;
     idx.min(num_pages - 1)
 }
 
@@ -227,7 +227,10 @@ mod tests {
         for pct in 0..=100u8 {
             seen[page_index_from_percent(pct, 4)] = true;
         }
-        assert!(seen.iter().all(|&s| s), "not every page was reachable: {seen:?}");
+        assert!(
+            seen.iter().all(|&s| s),
+            "not every page was reachable: {seen:?}"
+        );
     }
 
     #[test]

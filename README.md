@@ -82,7 +82,7 @@ Watch logs the same way as the earlier projects:
 ./watch-defmt.sh
 ```
 
-Turn pot #1 to switch pages, pot #2 to change the sample interval, and hold the button to freeze whatever page is showing. To see the fault-recovery behavior, just unplug the BME280's SDA or VCC wire while it's running — the display should drop to an error page within a couple of sample intervals, and pick back up on its own once you reconnect it.
+Turn pot #1 to switch pages, pot #2 to change the sample interval, and press the button once to freeze whatever page is showing. To see the fault-recovery behavior, just unplug the BME280's SDA or VCC wire while it's running — the display should drop to an error page within a couple of sample intervals, and pick back up on its own once you reconnect it.
 
 
 

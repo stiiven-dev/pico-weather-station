@@ -18,6 +18,7 @@ use static_cell::StaticCell;
 
 use panic_persist as _;
 
+use crate::ui::render::render_placeholder;
 use app::AppState;
 use embedded_hal::delay::DelayNs;
 use hal::{
@@ -29,7 +30,6 @@ use rp2040_hal::{self as hal, adc::AdcPin, Adc};
 use ui::render::{render_now, render_read_failed};
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
-use crate::ui::render::render_placeholder;
 
 type UsbState = (UsbDevice<'static, UsbBus>, SerialPort<'static, UsbBus>);
 static USB_STATE: Mutex<RefCell<Option<UsbState>>> = Mutex::new(RefCell::new(None));
@@ -279,6 +279,7 @@ fn main() -> ! {
             }
         }
         if now.wrapping_sub(display_last_time) >= DISPLAY_PERIOD_TICKS {
+            display_last_time = now;
             //oversampling
             let mut pot1_sum: u32 = 0; //u32 because worst case scenario is 131_040 which surpasses u16::MAX
             let mut pot2_sum: u32 = 0;
@@ -293,12 +294,25 @@ fn main() -> ! {
             let pot2_raw = (pot2_sum / app::OVERSAMPLE_COUNT) as u16;
             let _ = app.update_inputs(pot1_raw, pot2_raw, now);
             match app.ui.page {
-                ui::Page::Now => { render_now(&mut display, last_temp, last_humidity, last_pressure); }
-                ui::Page::MinMax => { render_placeholder(&mut display, "Min/Max").ok(); }
-                ui::Page::Trend => { render_placeholder(&mut display, "Trend").ok(); }
-                ui::Page::About => { render_placeholder(&mut display, "About").ok(); }
+                ui::Page::Now => {
+                    render_now(
+                        &mut display,
+                        last_temp,
+                        last_humidity,
+                        last_pressure,
+                        app.ui.frozen,
+                    );
+                }
+                ui::Page::MinMax => {
+                    render_placeholder(&mut display, "Min/Max").ok();
+                }
+                ui::Page::Trend => {
+                    render_placeholder(&mut display, "Trend").ok();
+                }
+                ui::Page::About => {
+                    render_placeholder(&mut display, "About").ok();
+                }
             }
         }
-        display_last_time = now;
     }
 }
