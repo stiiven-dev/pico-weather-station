@@ -7,10 +7,7 @@ use embedded_graphics::{
     text::Text,
 };
 use ssd1306::{
-    mode::BufferedGraphicsMode,
-    prelude::{DisplayConfig, WriteOnlyDataCommand},
-    size::DisplaySize128x64,
-    Ssd1306,
+    mode::BufferedGraphicsMode, prelude::WriteOnlyDataCommand, size::DisplaySize128x64, Ssd1306,
 };
 
 pub type DisplayType<DI> = Ssd1306<DI, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
@@ -62,12 +59,14 @@ where
     display.flush().unwrap();
 }
 //Quick stub, replace per-page later
-pub fn render_placeholder<D>(display: &mut D, label: &str) -> Result<(), D::Error>
+pub fn render_placeholder<DI>(display: &mut DisplayType<DI>, label: &str)
 where
-    D: DrawTarget<Color = BinaryColor>,
+    DI: WriteOnlyDataCommand,
 {
-    display.clear(BinaryColor::Off)?;
+    display.clear(BinaryColor::Off).unwrap();
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    Text::new(label, Point::new(10, 30), style).draw(display)?;
-    Ok(())
+    Text::new(label, Point::new(10, 30), style)
+        .draw(display)
+        .unwrap();
+    display.flush().unwrap();
 }

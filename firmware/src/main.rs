@@ -304,13 +304,13 @@ fn main() -> ! {
                     );
                 }
                 ui::Page::MinMax => {
-                    render_placeholder(&mut display, "Min/Max").ok();
+                    render_placeholder(&mut display, "Min/Max");
                 }
                 ui::Page::Trend => {
-                    render_placeholder(&mut display, "Trend").ok();
+                    render_placeholder(&mut display, "Trend");
                 }
                 ui::Page::About => {
-                    render_placeholder(&mut display, "About").ok();
+                    render_placeholder(&mut display, "About");
                 }
             }
         }
