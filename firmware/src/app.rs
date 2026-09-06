@@ -1,7 +1,7 @@
 use crate::poll_usb;
 use crate::ui::UiState;
 use rp2040_hal::rom_data;
-use station_core::{raw_to_percent, Calibration, Ema};
+use station_core::{raw_to_percent, Calibration, Ema, MinMaxTracker};
 
 pub const OVERSAMPLE_COUNT: u32 = 32;
 pub const ALPHA: f32 = 0.2;
@@ -16,6 +16,7 @@ pub struct AppState {
     pub sweep2: Calibration,
     pub calibrating: bool,
     pub info_last_time: u64,
+    pub minmax: MinMaxTracker,
     pub ui: UiState,
 }
 
@@ -30,6 +31,7 @@ impl AppState {
             sweep2: Calibration::start_sweep(),
             calibrating: false,
             info_last_time: 0,
+            minmax: MinMaxTracker::new(),
             ui: UiState::new(),
         }
     }

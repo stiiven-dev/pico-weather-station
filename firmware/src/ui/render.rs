@@ -9,7 +9,7 @@ use embedded_graphics::{
 use ssd1306::{
     mode::BufferedGraphicsMode, prelude::WriteOnlyDataCommand, size::DisplaySize128x64, Ssd1306,
 };
-
+use station_core::MinMaxTracker;
 pub type DisplayType<DI> = Ssd1306<DI, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
 
 pub fn render_now<DI>(
@@ -68,5 +68,39 @@ where
     Text::new(label, Point::new(10, 30), style)
         .draw(display)
         .unwrap();
+    display.flush().unwrap();
+}
+
+pub fn render_min_max<DI>(display: &mut DisplayType<DI>, mm: &MinMaxTracker)
+where
+    DI: WriteOnlyDataCommand,
+{
+    display.clear(BinaryColor::Off).unwrap();
+    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+    let mut buf = heapless::String::<32>::new();
+
+    let _ = write!(buf, "T {:.1}/{:.1}C", mm.temp_min, mm.temp_max);
+    Text::new(&buf, Point::new(4, 14), style)
+        .draw(display)
+        .unwrap();
+    buf.clear();
+
+    let _ = write!(buf, "H {:.0}/{:.0}%", mm.humidity_min, mm.humidity_max);
+    Text::new(&buf, Point::new(4, 32), style)
+        .draw(display)
+        .unwrap();
+    buf.clear();
+
+    // Pa -> hPa for a shorter, more readable number (101325 Pa -> 1013 hPa)
+    let _ = write!(
+        buf,
+        "P {:.0}/{:.0}hPa",
+        mm.pressure_min / 100.0,
+        mm.pressure_max / 100.0
+    );
+    Text::new(&buf, Point::new(4, 50), style)
+        .draw(display)
+        .unwrap();
+
     display.flush().unwrap();
 }

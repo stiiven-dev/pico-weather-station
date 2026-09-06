@@ -50,8 +50,4 @@ impl UiState {
     pub fn toggle_freeze(&mut self) {
         self.frozen = !self.frozen;
     }
-
-    pub fn page(&self) -> Page {
-        self.page
-    }
 }

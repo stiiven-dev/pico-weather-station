@@ -63,11 +63,6 @@ impl Ema {
     }
 }
 
-pub fn bar_fill_height(pct: u8, max_height: u32) -> u32 {
-    let pct = pct.min(100) as u32;
-    (max_height * pct) / 100
-}
-
 #[derive(Copy, Clone)]
 pub struct Calibration {
     pub min: u16,
@@ -95,10 +90,52 @@ impl Calibration {
         self.min < self.max
     }
 }
+#[derive(Copy, Clone)]
+pub struct MinMaxTracker {
+    pub temp_min: f32,
+    pub temp_max: f32,
+    pub humidity_min: f32,
+    pub humidity_max: f32,
+    pub pressure_min: f32,
+    pub pressure_max: f32,
+    initialized: bool,
+}
+impl MinMaxTracker {
+    pub const fn new() -> Self {
+        Self {
+            temp_min: 0.0,
+            temp_max: 0.0,
+            humidity_min: 0.0,
+            humidity_max: 0.0,
+            pressure_min: 0.0,
+            pressure_max: 0.0,
+            initialized: false,
+        }
+    }
+
+    pub fn observe(&mut self, temp: f32, humidity: f32, pressure: f32) {
+        if !self.initialized {
+            self.temp_min = temp;
+            self.temp_max = temp;
+            self.humidity_min = humidity;
+            self.humidity_min = humidity;
+            self.pressure_min = pressure;
+            self.pressure_min = pressure;
+            self.initialized = true;
+            return;
+        }
+        self.temp_min = self.temp_min.min(temp);
+        self.temp_max = self.temp_max.max(temp);
+        self.humidity_min = self.humidity_min.min(humidity);
+        self.humidity_max = self.humidity_max.max(humidity);
+        self.pressure_min = self.pressure_min.min(pressure);
+        self.pressure_max = self.pressure_max.max(pressure);
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    //-----------pots tests-------------
     #[test]
     fn midpoint_maps_to_fifty_percent() {
         assert_eq!(raw_to_percent(2048, 0, 4095), 50);
@@ -145,30 +182,7 @@ mod tests {
             "expected convergence near 100, got {last}"
         );
     }
-
-    #[test]
-    fn bar_height_zero_percent_is_zero_pixels() {
-        assert_eq!(bar_fill_height(0, 50), 0);
-    }
-
-    #[test]
-    fn bar_height_hundred_percent_is_full_height() {
-        assert_eq!(bar_fill_height(100, 50), 50);
-    }
-
-    #[test]
-    fn bar_height_fifty_percent_is_half_height() {
-        assert_eq!(bar_fill_height(50, 50), 25);
-    }
-
-    #[test]
-    fn bar_height_clamps_above_100_percent() {
-        // Shouldn't happen given raw_to_percent's own clamping, but a
-        // bar-height function that trusts its input blindly is a bug
-        // waiting for a future caller — clamp defensively here too.
-        assert_eq!(bar_fill_height(150, 50), 50);
-    }
-
+    //---------------------Calibration tests-------------------
     #[test]
     fn calibration_widens_as_samples_come_in() {
         let mut cal = Calibration::start_sweep();
@@ -195,7 +209,7 @@ mod tests {
         cal.observe(4000);
         assert!(cal.is_valid());
     }
-
+    //---------------Page tests---------------
     #[test]
     fn zero_percent_is_first_page() {
         assert_eq!(page_index_from_percent(0, 4), 0);
@@ -236,5 +250,19 @@ mod tests {
     #[test]
     fn single_page_is_always_index_zero() {
         assert_eq!(page_index_from_percent(50, 1), 0);
+    }
+    //----------------MinMax-----------------
+    #[test]
+    fn min_max_tracks_across_multiple_readings() {
+        let mut mm = MinMaxTracker::new();
+        mm.observe(20.0, 45.0, 101300.0);
+        mm.observe(18.0, 50.0, 101250.0);
+        mm.observe(22.0, 40.0, 101400.0);
+        assert_eq!(mm.temp_min, 18.0);
+        assert_eq!(mm.temp_max, 22.0);
+        assert_eq!(mm.humidity_min, 40.0);
+        assert_eq!(mm.humidity_max, 50.0);
+        assert_eq!(mm.pressure_min, 101250.0);
+        assert_eq!(mm.pressure_max, 101400.0);
     }
 }

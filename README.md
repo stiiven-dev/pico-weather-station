@@ -22,7 +22,7 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 
 - [x] BME280 reads over defmt (raw temp/humidity/pressure, unfiltered)
 - [x] shared-bus refactor — OLED and BME280 coexisting on I2C0
-- [ ] page state machine: pot #1 → page index, button → freeze/unfreeze
+- [x] page state machine: pot #1 → page index, button → freeze/unfreeze
 - [ ] Now / Min-Max / Trend / About pages rendered
 - [ ] `heapless::HistoryBuffer` ring buffer feeding the trend graph
 - [ ] dew point + sea-level pressure formulas in `station-core`, tested against reference tables
