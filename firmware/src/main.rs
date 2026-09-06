@@ -18,7 +18,6 @@ use static_cell::StaticCell;
 
 use panic_persist as _;
 
-use crate::ui::render::{render_min_max, render_placeholder, render_trend};
 use app::AppState;
 use embedded_hal::delay::DelayNs;
 use hal::{
@@ -27,7 +26,7 @@ use hal::{
 };
 use rp2040_hal::fugit::RateExtU32;
 use rp2040_hal::{self as hal, adc::AdcPin, Adc};
-use ui::render::{render_now, render_read_failed};
+use ui::render::{render_about, render_min_max, render_now, render_read_failed, render_trend};
 use usb_device::{class_prelude::*, prelude::*};
 use usbd_serial::SerialPort;
 
@@ -212,9 +211,12 @@ fn main() -> ! {
     wait_for_usb_settle(&timer, 3_000_000);
     defmt::info!("pico-weather-station is up!");
 
-    if let Some(msg) = panic_persist::get_panic_message_utf8() {
+    let panic_recovered = if let Some(msg) = panic_persist::get_panic_message_utf8() {
         defmt::error!("previous boot panicked: {}", msg);
-    }
+        true
+    } else {
+        false
+    };
 
     let now0 = timer.get_counter().ticks();
     let mut button = ButtonMonitor::new(
@@ -309,10 +311,11 @@ fn main() -> ! {
                     render_min_max(&mut display, &app.minmax);
                 }
                 ui::Page::Trend => {
-                    render_trend(&mut display, &app.history);
+                    render_trend(&mut display, &app.history, app.ui.frozen);
                 }
                 ui::Page::About => {
-                    render_placeholder(&mut display, "About");
+                    let uptime_secs = (now / 1_000_000) as u32; // timer ticks are microseconds
+                    render_about(&mut display, uptime_secs, panic_recovered);
                 }
             }
         }

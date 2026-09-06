@@ -67,18 +67,6 @@ where
         .unwrap();
     display.flush().unwrap();
 }
-//Quick stub, replace per-page later
-pub fn render_placeholder<DI>(display: &mut DisplayType<DI>, label: &str)
-where
-    DI: WriteOnlyDataCommand,
-{
-    display.clear(BinaryColor::Off).unwrap();
-    let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    Text::new(label, Point::new(10, 30), style)
-        .draw(display)
-        .unwrap();
-    display.flush().unwrap();
-}
 
 pub fn render_min_max<DI>(display: &mut DisplayType<DI>, mm: &MinMaxTracker)
 where
@@ -114,48 +102,92 @@ where
     display.flush().unwrap();
 }
 
-pub fn render_trend<DI>(display: &mut DisplayType<DI>, history: &HistoryBuf<f32, HISTORY_LEN>)
+pub fn render_trend<DI>(
+    display: &mut DisplayType<DI>,
+    history: &HistoryBuf<f32, HISTORY_LEN>,
+    frozen: bool,
+) where
+    DI: WriteOnlyDataCommand,
+{
+    if !frozen {
+        display.clear(BinaryColor::Off).unwrap();
+        if history.len() < 2 {
+            let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+            Text::new("Collecting...", Point::new(10, 32), style)
+                .draw(display)
+                .unwrap();
+            return;
+        }
+
+        let mut min = f32::MAX;
+        let mut max = f32::MIN;
+        for &v in history.oldest_ordered() {
+            min = min.min(v);
+            max = max.max(v);
+        }
+
+        let len = history.len();
+        let step_x = GRAPH_WIDTH as f32 / (HISTORY_LEN as f32 - 1.0);
+        let start_offset = (HISTORY_LEN - len) as f32 * step_x;
+
+        let mut prev: Option<Point> = None;
+        for (i, &v) in history.oldest_ordered().enumerate() {
+            let x = GRAPH_X0 + (start_offset + i as f32 * step_x) as i32;
+            let y = GRAPH_Y0 + value_to_graph_y(v, min, max, GRAPH_HEIGHT) as i32;
+            let p = Point::new(x, y);
+            if let Some(prev_p) = prev {
+                Line::new(prev_p, p)
+                    .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
+                    .draw(display)
+                    .unwrap();
+            }
+            prev = Some(p);
+        }
+
+        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
+        let mut buf = heapless::String::<24>::new();
+        let _ = write!(buf, "{:.1}-{:.1}C", min, max);
+        Text::new(&buf, Point::new(4, 62), style)
+            .draw(display)
+            .unwrap();
+        display.flush().unwrap();
+    }
+}
+
+pub fn render_about<DI>(display: &mut DisplayType<DI>, uptime_secs: u32, panic_recovered: bool)
 where
     DI: WriteOnlyDataCommand,
 {
     display.clear(BinaryColor::Off).unwrap();
-    if history.len() < 2 {
-        let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-        Text::new("Collecting...", Point::new(10, 32), style)
-            .draw(display)
-            .unwrap();
-        return;
-    }
-
-    let mut min = f32::MAX;
-    let mut max = f32::MIN;
-    for &v in history.oldest_ordered() {
-        min = min.min(v);
-        max = max.max(v);
-    }
-
-    let len = history.len();
-    let step_x = GRAPH_WIDTH as f32 / (HISTORY_LEN as f32 - 1.0);
-    let start_offset = (HISTORY_LEN - len) as f32 * step_x;
-
-    let mut prev: Option<Point> = None;
-    for (i, &v) in history.oldest_ordered().enumerate() {
-        let x = GRAPH_X0 + (start_offset + i as f32 * step_x) as i32;
-        let y = GRAPH_Y0 + value_to_graph_y(v, min, max, GRAPH_HEIGHT) as i32;
-        let p = Point::new(x, y);
-        if let Some(prev_p) = prev {
-            Line::new(prev_p, p)
-                .into_styled(PrimitiveStyle::with_stroke(BinaryColor::On, 1))
-                .draw(display)
-                .unwrap();
-        }
-        prev = Some(p);
-    }
-
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
-    let mut buf = heapless::String::<24>::new();
-    let _ = write!(buf, "{:.1}-{:.1}C", min, max);
-    Text::new(&buf, Point::new(4, 62), style)
+    let mut buf = heapless::String::<32>::new();
+
+    let _ = write!(buf, "v{}", env!("CARGO_PKG_VERSION"));
+    Text::new(&buf, Point::new(4, 12), style)
+        .draw(display)
+        .unwrap();
+    buf.clear();
+
+    let _ = write!(buf, "git {}", env!("GIT_HASH"));
+    Text::new(&buf, Point::new(4, 26), style)
+        .draw(display)
+        .unwrap();
+    buf.clear();
+
+    let h = uptime_secs / 3600;
+    let m = (uptime_secs % 3600) / 60;
+    let s = uptime_secs % 60;
+    let _ = write!(buf, "up {:02}:{:02}:{:02}", h, m, s);
+    Text::new(&buf, Point::new(4, 40), style)
+        .draw(display)
+        .unwrap();
+
+    let status = if panic_recovered {
+        "last: recovered"
+    } else {
+        "last: clean boot"
+    };
+    Text::new(status, Point::new(4, 54), style)
         .draw(display)
         .unwrap();
     display.flush().unwrap();

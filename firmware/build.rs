@@ -14,18 +14,19 @@ use std::io::Write;
 use std::path::PathBuf;
 
 fn main() {
-    // Put `memory.x` in our output directory and ensure it's
-    // on the linker search path.
     let out = &PathBuf::from(env::var_os("OUT_DIR").unwrap());
     File::create(out.join("memory.x"))
         .unwrap()
         .write_all(include_bytes!("memory.x"))
         .unwrap();
     println!("cargo:rustc-link-search={}", out.display());
-
-    // By default, Cargo will re-run a build script whenever
-    // any file in the project changes. By specifying `memory.x`
-    // here, we ensure the build script is only re-run when
-    // `memory.x` is changed.
     println!("cargo:rerun-if-changed=memory.x");
+
+    let hash = std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".into());
+    println!("cargo:rustc-env=GIT_HASH={hash}");
+    println!("cargo:rerun-if-changed=.git/HEAD"); // rebuild if you commit, so the hash stays current
 }
