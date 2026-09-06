@@ -19,6 +19,7 @@ const GRAPH_X0: i32 = 4;
 const GRAPH_WIDTH: u32 = 120;
 const GRAPH_Y0: i32 = 2;
 const GRAPH_HEIGHT: u32 = 50;
+const STATION_ALTITUDE_M: f32 = 86.0;
 pub type DisplayType<DI> = Ssd1306<DI, DisplaySize128x64, BufferedGraphicsMode<DisplaySize128x64>>;
 
 pub fn render_now<DI>(
@@ -34,21 +35,31 @@ pub fn render_now<DI>(
         let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
         display.clear(BinaryColor::Off).unwrap();
 
-        let mut temp_buffer = heapless::String::<32>::new();
-        let mut hum_buffer = heapless::String::<32>::new();
-        let mut press_buffer = heapless::String::<32>::new();
+        let sea_level_pa = station_core::sea_level_pressure(pressure_pa, STATION_ALTITUDE_M);
+        let dew_pt = station_core::dew_point_c(temperature, humidity);
 
-        let _ = write!(temp_buffer, "Temp: {:.2} C", temperature);
-        let _ = write!(hum_buffer, "Hum: {:.2} %", humidity);
-        let _ = write!(press_buffer, "Pressure: {:.2} hPa", pressure_pa / 100.0);
+        let mut buf = heapless::String::<20>::new();
 
-        Text::new(&temp_buffer, Point::new(0, 15), style)
+        let _ = write!(buf, "Temp: {:.1}C", temperature);
+        Text::new(&buf, Point::new(4, 14), style)
             .draw(display)
             .unwrap();
-        Text::new(&hum_buffer, Point::new(0, 30), style)
+        buf.clear();
+
+        let _ = write!(buf, "Hum: {:.0}%", humidity);
+        Text::new(&buf, Point::new(4, 28), style)
             .draw(display)
             .unwrap();
-        Text::new(&press_buffer, Point::new(0, 45), style)
+        buf.clear();
+
+        let _ = write!(buf, "Pres: {:.0}hPa", sea_level_pa / 100.0);
+        Text::new(&buf, Point::new(4, 42), style)
+            .draw(display)
+            .unwrap();
+        buf.clear();
+
+        let _ = write!(buf, "Dew: {:.1}C", dew_pt);
+        Text::new(&buf, Point::new(4, 56), style)
             .draw(display)
             .unwrap();
 

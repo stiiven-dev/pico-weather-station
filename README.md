@@ -25,7 +25,7 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 - [x] page state machine: pot #1 → page index, button → freeze/unfreeze
 - [x] Now / Min-Max / Trend / About pages rendered
 - [x] `heapless::HistoryBuffer` ring buffer feeding the trend graph
-- [ ] dew point + sea-level pressure formulas in `station-core`, tested against reference tables
+- [x] dew point + sea-level pressure formulas in `station-core`, tested against reference tables
 - [ ] fault injection: unplug the sensor mid-run, confirm error page + auto-recovery (no reboot)
 - [ ] Finalize cleanup, polish, and any missing documentation before release.
 

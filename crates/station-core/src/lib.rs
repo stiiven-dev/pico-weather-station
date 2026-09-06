@@ -142,6 +142,34 @@ pub fn value_to_graph_y(value: f32, min: f32, max: f32, height: u32) -> u32 {
     let from_top = (1.0 - frac) * height.saturating_sub(1) as f32;
     from_top as u32
 }
+
+/// Magnus-formula dew point from temperature and relative humidity.
+/// Accurate to within ~0.4°C over the range a hobby weather station
+/// actually sees (roughly 0-60°C, RH above a percent or so).
+///
+/// RH is clamped away from 0 before the log — RH=0% is physically
+/// nonsensical anyway (dew point is undefined at zero humidity), and
+/// `ln(0)` would otherwise produce `-inf` and poison the result.
+pub fn dew_point_c(temp_c: f32, rh_pct: f32) -> f32 {
+    const A: f32 = 17.62;
+    const B: f32 = 243.12;
+    let rh = rh_pct.clamp(0.1, 100.0) / 100.0;
+    let gamma = libm::logf(rh) + (A * temp_c) / (B + temp_c);
+    (B * gamma) / (A - gamma)
+}
+
+/// Adjust a station pressure reading to what it would read at sea level,
+/// given the station's altitude. This is the standard barometric
+/// formula behind the altitude functions in common BME280/BMP libraries
+/// (Adafruit's included) — it assumes the International Standard
+/// Atmosphere's temperature/pressure profile rather than today's actual
+/// conditions, which is why the constants (44330, 5.255) are fixed
+/// rather than derived from a live temperature reading. Good enough for
+/// a hobby station's relative trends; not survey-grade absolute accuracy.
+pub fn sea_level_pressure(station_pressure_pa: f32, altitude_m: f32) -> f32 {
+    station_pressure_pa / libm::powf(1.0 - altitude_m / 44330.0, 5.255)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,5 +327,77 @@ mod tests {
     #[test]
     fn value_below_min_clamps_to_bottom_row() {
         assert_eq!(value_to_graph_y(-999.0, 0.0, 10.0, 50), 49);
+    }
+
+    #[test]
+    fn dew_point_matches_reference_table_25c_60rh() {
+        // Standard psychrometric reference value: 25°C / 60% RH -> ~16.7°C
+        assert!((dew_point_c(25.0, 60.0) - 16.7).abs() < 0.3);
+    }
+
+    #[test]
+    fn dew_point_matches_reference_table_20c_50rh() {
+        // ~9.3°C per standard reference tables
+        assert!((dew_point_c(20.0, 50.0) - 9.3).abs() < 0.3);
+    }
+
+    #[test]
+    fn dew_point_equals_air_temp_at_100_percent_humidity() {
+        // Not just a reference-table check — this is an exact identity
+        // of the Magnus formula itself: at RH=100%, ln(1)=0, and the
+        // algebra collapses to dew_point == temp_c regardless of value.
+        for temp in [-10.0, 0.0, 15.0, 30.0, 45.0] {
+            assert!((dew_point_c(temp, 100.0) - temp).abs() < 0.01);
+        }
+    }
+
+    #[test]
+    fn dew_point_never_exceeds_air_temperature() {
+        // Physical invariant: dew point can't be warmer than the air
+        // it's condensing out of, for any humidity below saturation.
+        for rh in [10.0, 30.0, 50.0, 70.0, 90.0, 99.0] {
+            assert!(dew_point_c(20.0, rh) <= 20.0 + 0.01);
+        }
+    }
+
+    #[test]
+    fn sea_level_pressure_at_zero_altitude_is_unchanged() {
+        // altitude=0 -> the correction factor is exactly 1.0
+        assert!((sea_level_pressure(95000.0, 0.0) - 95000.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn sea_level_pressure_reconstructs_isa_standard_at_500m() {
+        // ICAO Standard Atmosphere: pressure at 500m altitude is
+        // 95461 Pa. Feeding that back through this function at the same
+        // altitude should reconstruct the ISA sea-level standard,
+        // 101325 Pa — the 44330/5.255 constants are literally derived
+        // from this reference atmosphere, so this checks the constants
+        // are wired up correctly, not just that the formula "runs".
+        let result = sea_level_pressure(95461.0, 500.0);
+        assert!(
+            (result - 101325.0).abs() < 50.0,
+            "got {result}, expected ~101325"
+        );
+    }
+
+    #[test]
+    fn sea_level_pressure_reconstructs_isa_standard_at_1000m() {
+        // ISA pressure at 1000m: 89876 Pa
+        let result = sea_level_pressure(89876.0, 1000.0);
+        assert!(
+            (result - 101325.0).abs() < 50.0,
+            "got {result}, expected ~101325"
+        );
+    }
+
+    #[test]
+    fn sea_level_pressure_is_always_at_least_station_pressure() {
+        // Physical invariant for any non-negative altitude: sea-level-
+        // equivalent pressure can't read lower than what the station
+        // actually measured.
+        for altitude in [0.0, 100.0, 500.0, 1500.0, 3000.0] {
+            assert!(sea_level_pressure(90000.0, altitude) >= 90000.0 - 0.01);
+        }
     }
 }
