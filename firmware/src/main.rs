@@ -18,7 +18,7 @@ use static_cell::StaticCell;
 
 use panic_persist as _;
 
-use crate::ui::render::{render_min_max, render_placeholder};
+use crate::ui::render::{render_min_max, render_placeholder, render_trend};
 use app::AppState;
 use embedded_hal::delay::DelayNs;
 use hal::{
@@ -272,6 +272,7 @@ fn main() -> ! {
                     last_humidity = m.humidity;
                     last_pressure = m.pressure;
                     app.minmax.observe(last_temp, last_humidity, last_pressure);
+                    app.history.write(last_temp);
                 }
                 Err(_) => {
                     defmt::warn!("BME280 read failed");
@@ -308,7 +309,7 @@ fn main() -> ! {
                     render_min_max(&mut display, &app.minmax);
                 }
                 ui::Page::Trend => {
-                    render_placeholder(&mut display, "Trend");
+                    render_trend(&mut display, &app.history);
                 }
                 ui::Page::About => {
                     render_placeholder(&mut display, "About");

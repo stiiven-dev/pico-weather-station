@@ -132,6 +132,16 @@ impl MinMaxTracker {
         self.pressure_max = self.pressure_max.max(pressure);
     }
 }
+
+pub fn value_to_graph_y(value: f32, min: f32, max: f32, height: u32) -> u32 {
+    if max <= min {
+        return height.saturating_sub(1) / 2;
+    }
+    let clamped = value.clamp(min, max);
+    let frac = (clamped - min) / (max - min); // 0.0 at min, 1.0 at max
+    let from_top = (1.0 - frac) * height.saturating_sub(1) as f32;
+    from_top as u32
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +274,30 @@ mod tests {
         assert_eq!(mm.humidity_max, 50.0);
         assert_eq!(mm.pressure_min, 101250.0);
         assert_eq!(mm.pressure_max, 101400.0);
+    }
+    //-----------Graph tests--------------
+    #[test]
+    fn value_at_min_maps_to_bottom_row() {
+        assert_eq!(value_to_graph_y(0.0, 0.0, 10.0, 50), 49);
+    }
+
+    #[test]
+    fn value_at_max_maps_to_top_row() {
+        assert_eq!(value_to_graph_y(10.0, 0.0, 10.0, 50), 0);
+    }
+
+    #[test]
+    fn degenerate_range_returns_middle_row() {
+        assert_eq!(value_to_graph_y(5.0, 5.0, 5.0, 50), 24);
+    }
+
+    #[test]
+    fn value_above_max_clamps_to_top_row() {
+        assert_eq!(value_to_graph_y(999.0, 0.0, 10.0, 50), 0);
+    }
+
+    #[test]
+    fn value_below_min_clamps_to_bottom_row() {
+        assert_eq!(value_to_graph_y(-999.0, 0.0, 10.0, 50), 49);
     }
 }

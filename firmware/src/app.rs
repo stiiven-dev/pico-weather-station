@@ -1,12 +1,13 @@
 use crate::poll_usb;
 use crate::ui::UiState;
+use heapless::HistoryBuf;
 use rp2040_hal::rom_data;
 use station_core::{raw_to_percent, Calibration, Ema, MinMaxTracker};
 
 pub const OVERSAMPLE_COUNT: u32 = 32;
 pub const ALPHA: f32 = 0.2;
 pub const PRINT_RATE: u64 = 500_000;
-
+pub const HISTORY_LEN: usize = 60;
 pub struct AppState {
     pub ema1: Ema,
     pub ema2: Ema,
@@ -17,6 +18,7 @@ pub struct AppState {
     pub calibrating: bool,
     pub info_last_time: u64,
     pub minmax: MinMaxTracker,
+    pub history: HistoryBuf<f32, HISTORY_LEN>,
     pub ui: UiState,
 }
 
@@ -32,6 +34,7 @@ impl AppState {
             calibrating: false,
             info_last_time: 0,
             minmax: MinMaxTracker::new(),
+            history: HistoryBuf::new(),
             ui: UiState::new(),
         }
     }
