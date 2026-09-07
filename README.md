@@ -4,8 +4,7 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 
 ![breadboard](docs/images/breadboard)
 
-<!-- TODO: demo GIF — cycling through pages, then unplugging the sensor mid-run to show the error page and auto-recovery -->
-`docs/images/demo.gif`
+[Demo Video Here](docs/videos/demo.mp4)
 
 ## Features
 
@@ -26,7 +25,7 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 - [x] `heapless::HistoryBuffer` ring buffer feeding the trend graph
 - [x] dew point + sea-level pressure formulas in `station-core`, tested against reference tables
 - [x] fault injection: unplug the sensor mid-run, confirm error page + auto-recovery (no reboot)
-- [ ] Finalize cleanup, polish, and any missing documentation before release.
+- [x] Finalize cleanup, polish, and any missing documentation before release.
 
 ## Hardware BOM
 
