@@ -118,9 +118,9 @@ impl MinMaxTracker {
             self.temp_min = temp;
             self.temp_max = temp;
             self.humidity_min = humidity;
-            self.humidity_min = humidity;
+            self.humidity_max = humidity;
             self.pressure_min = pressure;
-            self.pressure_min = pressure;
+            self.pressure_max = pressure;
             self.initialized = true;
             return;
         }
