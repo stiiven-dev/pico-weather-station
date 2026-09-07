@@ -169,6 +169,11 @@ pub fn dew_point_c(temp_c: f32, rh_pct: f32) -> f32 {
 pub fn sea_level_pressure(station_pressure_pa: f32, altitude_m: f32) -> f32 {
     station_pressure_pa / libm::powf(1.0 - altitude_m / 44330.0, 5.255)
 }
+///Linearly maps a pct into a value between min_ticks and max_ticks
+pub fn interval_from_percent(pct: u8, min_ticks: u64, max_ticks: u64) -> u64 {
+    let pct = pct.min(100) as u64;
+    min_ticks + ((max_ticks - min_ticks) * pct) / 100
+}
 
 #[cfg(test)]
 mod tests {
@@ -399,5 +404,24 @@ mod tests {
         for altitude in [0.0, 100.0, 500.0, 1500.0, 3000.0] {
             assert!(sea_level_pressure(90000.0, altitude) >= 90000.0 - 0.01);
         }
+    }
+    #[test]
+    fn interval_at_zero_percent_is_the_minimum() {
+        assert_eq!(interval_from_percent(0, 500_000, 5_000_000), 500_000);
+    }
+
+    #[test]
+    fn interval_at_hundred_percent_is_the_maximum() {
+        assert_eq!(interval_from_percent(100, 500_000, 5_000_000), 5_000_000);
+    }
+
+    #[test]
+    fn interval_at_fifty_percent_is_the_midpoint() {
+        assert_eq!(interval_from_percent(50, 500_000, 5_000_000), 2_750_000);
+    }
+
+    #[test]
+    fn interval_above_100_percent_clamps_to_maximum() {
+        assert_eq!(interval_from_percent(255, 500_000, 5_000_000), 5_000_000);
     }
 }

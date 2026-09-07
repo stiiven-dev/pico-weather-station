@@ -40,7 +40,6 @@ const HOLD_TICKS: u64 = 1_500_000;
 // --- Other consts ---
 const POLL_BUTTON_TICKS: u64 = 5_000;
 const DISPLAY_PERIOD_TICKS: u64 = 50_000; //instead of delay_ms(50)
-const BME_READ_TICKS: u64 = 1_000_000;
 struct DefmtUsbWriter;
 
 struct PollingDelay<'a> {
@@ -259,7 +258,7 @@ fn main() -> ! {
                 ButtonEvent::None => {}
             }
         }
-        if now.wrapping_sub(bme_last_time) >= BME_READ_TICKS {
+        if now.wrapping_sub(bme_last_time) >= app.bme_interval_ticks {
             bme_last_time = now;
             match bme.measure(&mut bme_delay) {
                 Ok(m) => {
@@ -315,7 +314,8 @@ fn main() -> ! {
                 }
                 ui::Page::About => {
                     let uptime_secs = (now / 1_000_000) as u32; // timer ticks are microseconds
-                    render_about(&mut display, uptime_secs, panic_recovered);
+                    let ticks = app.bme_interval_ticks / 1_000;
+                    render_about(&mut display, uptime_secs, panic_recovered, ticks);
                 }
             }
         }

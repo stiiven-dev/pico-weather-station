@@ -165,21 +165,30 @@ pub fn render_trend<DI>(
     }
 }
 
-pub fn render_about<DI>(display: &mut DisplayType<DI>, uptime_secs: u32, panic_recovered: bool)
-where
+pub fn render_about<DI>(
+    display: &mut DisplayType<DI>,
+    uptime_secs: u32,
+    panic_recovered: bool,
+    interval_rate: u64,
+) where
     DI: WriteOnlyDataCommand,
 {
     display.clear(BinaryColor::Off).unwrap();
     let style = MonoTextStyle::new(&FONT_6X10, BinaryColor::On);
     let mut buf = heapless::String::<32>::new();
 
-    let _ = write!(buf, "v{}", env!("CARGO_PKG_VERSION"));
+    let _ = write!(
+        buf,
+        "v:{},git:{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("GIT_HASH")
+    );
     Text::new(&buf, Point::new(4, 12), style)
         .draw(display)
         .unwrap();
     buf.clear();
 
-    let _ = write!(buf, "git {}", env!("GIT_HASH"));
+    let _ = write!(buf, "Sample rate: {:.1}s", (interval_rate / 1_000) as f32);
     Text::new(&buf, Point::new(4, 26), style)
         .draw(display)
         .unwrap();

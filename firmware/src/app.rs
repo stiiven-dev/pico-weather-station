@@ -2,12 +2,14 @@ use crate::poll_usb;
 use crate::ui::UiState;
 use heapless::HistoryBuf;
 use rp2040_hal::rom_data;
-use station_core::{raw_to_percent, Calibration, Ema, MinMaxTracker};
+use station_core::{interval_from_percent, raw_to_percent, Calibration, Ema, MinMaxTracker};
 
 pub const OVERSAMPLE_COUNT: u32 = 32;
 pub const ALPHA: f32 = 0.2;
 pub const PRINT_RATE: u64 = 500_000;
 pub const HISTORY_LEN: usize = 60;
+pub const MIN_SAMPLE_INTERVAL_TICKS: u64 = 500_000; //0.5s
+pub const MAX_SAMPLE_INTERVAL_TICKS: u64 = 5_000_000; //5s
 pub struct AppState {
     pub ema1: Ema,
     pub ema2: Ema,
@@ -19,6 +21,7 @@ pub struct AppState {
     pub info_last_time: u64,
     pub minmax: MinMaxTracker,
     pub history: HistoryBuf<f32, HISTORY_LEN>,
+    pub bme_interval_ticks: u64,
     pub ui: UiState,
 }
 
@@ -35,6 +38,7 @@ impl AppState {
             info_last_time: 0,
             minmax: MinMaxTracker::new(),
             history: HistoryBuf::new(),
+            bme_interval_ticks: MIN_SAMPLE_INTERVAL_TICKS,
             ui: UiState::new(),
         }
     }
@@ -92,6 +96,8 @@ impl AppState {
 
         if !self.calibrating {
             self.ui.update_page(pct1);
+            self.bme_interval_ticks =
+                interval_from_percent(pct2, MIN_SAMPLE_INTERVAL_TICKS, MAX_SAMPLE_INTERVAL_TICKS);
         }
 
         if now - self.info_last_time >= PRINT_RATE {

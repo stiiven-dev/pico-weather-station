@@ -82,7 +82,11 @@ Watch logs the same way as the earlier projects:
 ./watch-defmt.sh
 ```
 
-Turn pot #1 to switch pages, pot #2 to change the sample interval, and press the button once to freeze whatever page is showing. To see the fault-recovery behavior, just unplug the BME280's SDA or VCC wire while it's running — the display should drop to an error page within a couple of sample intervals, and pick back up on its own once you reconnect it.
+Turn pot #1 to switch pages, pot #2 to change the sample interval,
+and press the button once to freeze whatever page is showing.
+To see the fault-recovery behavior, just unplug the BME280's SDA or VCC wire 
+while it's running — the display should drop to an error page within a couple of sample intervals,
+and pick back up on its own once you reconnect it.
 
 
 
@@ -111,6 +115,7 @@ cargo test -p station-core --target x86_64-unknown-linux-gnu
 `firmware/` has no host tests — the shared-bus behavior and fault recovery
 specifically need real hardware (and a real fault, i.e. an unplugged wire) to 
 verify.
+
 But if you want to test and scan the i2c bus:
 
 Run the i2c shell script in another terminal to catch then:
