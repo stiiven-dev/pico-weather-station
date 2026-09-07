@@ -188,7 +188,7 @@ pub fn render_about<DI>(
         .unwrap();
     buf.clear();
 
-    let _ = write!(buf, "Sample rate: {:.1}s", (interval_rate / 1_000) as f32);
+    let _ = write!(buf, "Sample rate: {:.1}s", interval_rate as f32 / 1_000.0);
     Text::new(&buf, Point::new(4, 26), style)
         .draw(display)
         .unwrap();

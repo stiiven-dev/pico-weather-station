@@ -14,6 +14,7 @@ pub enum Page {
 pub struct UiState {
     pub page: Page,
     pub frozen: bool,
+    pub error: bool,
 }
 
 impl Page {
@@ -33,6 +34,7 @@ impl UiState {
         Self {
             page: Page::Now,
             frozen: false,
+            error: false,
         }
     }
 
@@ -49,5 +51,13 @@ impl UiState {
 
     pub fn toggle_freeze(&mut self) {
         self.frozen = !self.frozen;
+    }
+
+    pub fn set_error(&mut self) {
+        self.error = true;
+    }
+
+    pub fn reset_error(&mut self) {
+        self.error = false;
     }
 }

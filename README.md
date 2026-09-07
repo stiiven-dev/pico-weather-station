@@ -2,8 +2,7 @@
 
 BME280 environmental sensor + OLED, with a multipage UI navigated by the same two pots from `pico-pot-meter` — no debug probe required.
 
-<!-- TODO: hero photo of the breadboard -->
-`docs/images/breadboard.jpg`
+![breadboard](docs/images/breadboard)
 
 <!-- TODO: demo GIF — cycling through pages, then unplugging the sensor mid-run to show the error page and auto-recovery -->
 `docs/images/demo.gif`
@@ -26,7 +25,7 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 - [x] Now / Min-Max / Trend / About pages rendered
 - [x] `heapless::HistoryBuffer` ring buffer feeding the trend graph
 - [x] dew point + sea-level pressure formulas in `station-core`, tested against reference tables
-- [ ] fault injection: unplug the sensor mid-run, confirm error page + auto-recovery (no reboot)
+- [x] fault injection: unplug the sensor mid-run, confirm error page + auto-recovery (no reboot)
 - [ ] Finalize cleanup, polish, and any missing documentation before release.
 
 ## Hardware BOM
@@ -37,7 +36,6 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 | GY-BME280                         |     1 | 3.3 V I²C sensor                         |
 | SSD1306/SSD1309 OLED 0.96" 128×64 |     1 | I²C display                              |
 | 10 kΩ potentiometer               |     2 | One per menu/control axis                |
-| 330 Ω resistor                    |     1 | Status LED                               |
 | Breadboard + jumper wires         | 1 set | Prototyping hardware                     |
 | 3.3 V rail and common ground      |     1 | Required for stable I²C and sensor power |
 

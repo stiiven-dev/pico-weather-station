@@ -67,27 +67,33 @@ impl embedded_io::Write for DefmtUsbWriter {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let mut written = 0;
         let mut idle_polls = 0u32;
-        const MAX_IDLE_POLLS: u32 = 200; // bound the spin — drop the rest if host isn't draining
+        const MAX_IDLE_POLLS: u32 = 20; // lowered from 200 — defense in depth, see below
 
         while written < buf.len() && idle_polls < MAX_IDLE_POLLS {
             critical_section::with(|cs| {
                 if let Some((usb_dev, serial)) = USB_STATE.borrow_ref_mut(cs).as_mut() {
                     usb_dev.poll(&mut [serial]);
+
+                    // No terminal has opened the port — bail immediately
+                    // rather than retrying.
+                    if !serial.dtr() {
+                        idle_polls = MAX_IDLE_POLLS;
+                        return;
+                    }
+
                     match serial.write(&buf[written..]) {
                         Ok(n) if n > 0 => {
                             written += n;
-                            idle_polls = 0; // reset — we're making progress
+                            idle_polls = 0;
                         }
                         Ok(_) | Err(UsbError::WouldBlock) => {
                             idle_polls += 1;
                         }
-                        Err(_) => idle_polls = MAX_IDLE_POLLS, // bail on real errors
+                        Err(_) => idle_polls = MAX_IDLE_POLLS,
                     }
                 }
             });
         }
-        // Whether we wrote everything or gave up, tell the caller it's done —
-        // dropping unsent log bytes is fine; hanging the app is not.
         Ok(buf.len())
     }
 
@@ -272,50 +278,54 @@ fn main() -> ! {
                     last_temp = m.temperature;
                     last_humidity = m.humidity;
                     last_pressure = m.pressure;
+                    app.ui.reset_error();
                     app.minmax.observe(last_temp, last_humidity, last_pressure);
                     app.history.write(last_temp);
                 }
                 Err(_) => {
                     defmt::warn!("BME280 read failed");
+                    app.ui.set_error();
                     render_read_failed(&mut display);
                 }
             }
         }
         if now.wrapping_sub(display_last_time) >= DISPLAY_PERIOD_TICKS {
             display_last_time = now;
-            //oversampling
-            let mut pot1_sum: u32 = 0; //u32 because worst case scenario is 131_040 which surpasses u16::MAX
-            let mut pot2_sum: u32 = 0;
+            if !app.ui.error {
+                //oversampling
+                let mut pot1_sum: u32 = 0; //u32 because worst case scenario is 131_040 which surpasses u16::MAX
+                let mut pot2_sum: u32 = 0;
 
-            for _ in 0..app::OVERSAMPLE_COUNT {
-                let raw_val1 = adc.read(&mut adc_pin0).unwrap();
-                let raw_val2 = adc.read(&mut adc_pin1).unwrap();
-                pot1_sum += raw_val1 as u32;
-                pot2_sum += raw_val2 as u32;
-            }
-            let pot1_raw = (pot1_sum / app::OVERSAMPLE_COUNT) as u16;
-            let pot2_raw = (pot2_sum / app::OVERSAMPLE_COUNT) as u16;
-            let _ = app.update_inputs(pot1_raw, pot2_raw, now);
-            match app.ui.page {
-                ui::Page::Now => {
-                    render_now(
-                        &mut display,
-                        last_temp,
-                        last_humidity,
-                        last_pressure,
-                        app.ui.frozen,
-                    );
+                for _ in 0..app::OVERSAMPLE_COUNT {
+                    let raw_val1 = adc.read(&mut adc_pin0).unwrap();
+                    let raw_val2 = adc.read(&mut adc_pin1).unwrap();
+                    pot1_sum += raw_val1 as u32;
+                    pot2_sum += raw_val2 as u32;
                 }
-                ui::Page::MinMax => {
-                    render_min_max(&mut display, &app.minmax);
-                }
-                ui::Page::Trend => {
-                    render_trend(&mut display, &app.history, app.ui.frozen);
-                }
-                ui::Page::About => {
-                    let uptime_secs = (now / 1_000_000) as u32; // timer ticks are microseconds
-                    let ticks = app.bme_interval_ticks / 1_000;
-                    render_about(&mut display, uptime_secs, panic_recovered, ticks);
+                let pot1_raw = (pot1_sum / app::OVERSAMPLE_COUNT) as u16;
+                let pot2_raw = (pot2_sum / app::OVERSAMPLE_COUNT) as u16;
+                let _ = app.update_inputs(pot1_raw, pot2_raw, now);
+                match app.ui.page {
+                    ui::Page::Now => {
+                        render_now(
+                            &mut display,
+                            last_temp,
+                            last_humidity,
+                            last_pressure,
+                            app.ui.frozen,
+                        );
+                    }
+                    ui::Page::MinMax => {
+                        render_min_max(&mut display, &app.minmax);
+                    }
+                    ui::Page::Trend => {
+                        render_trend(&mut display, &app.history, app.ui.frozen);
+                    }
+                    ui::Page::About => {
+                        let uptime_secs = (now / 1_000_000) as u32; // timer ticks are microseconds
+                        let ticks = app.bme_interval_ticks / 1_000;
+                        render_about(&mut display, uptime_secs, panic_recovered, ticks);
+                    }
                 }
             }
         }
