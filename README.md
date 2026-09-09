@@ -4,14 +4,15 @@ BME280 environmental sensor + OLED, with a multipage UI navigated by the same tw
 
 ![breadboard](docs/images/breadboard)
 
-[Demo Video Here](docs/videos/demo.mp4)
+[Demo Video](docs/videos/demo.mp4)
 
 ## Features
 
 - Four pages, cycled with pot #1: **Now** (live temp/humidity/pressure), **Min/Max** (session extremes), **Trend** (60-sample rolling graph), **About** (firmware version + git hash).
 - Pot #2 sets the sample interval; button freezes the current page (handy for actually reading the trend graph instead of watching it scroll).
 - Dew point and sea-level-adjusted pressure computed in [`crates/station-core`](crates/station-core), unit-tested against known reference values on the host.
-- **Graceful sensor-fault recovery**: unplug the BME280 mid-run and the display switches to an error page instead of hanging or panicking — replug it, and it recovers on its own, no reboot needed. This is the actual point of the project; most hobby firmware just `unwrap()`s on the first bad I²C read and dies.
+- **Graceful sensor-fault recovery**: unplug the BME280 mid-run and the display switches to an error page instead of hanging or panicking — replug it,
+and it recovers on its own, no reboot needed. This is the actual point of the project; most hobby firmware just `unwrap()`s on the first bad I²C read and dies.
 - Two I²C devices sharing one bus (BME280 + OLED) — the first project in this series that needs the shared-bus pattern instead of owning a peripheral outright.
 - Same USB-only dev loop as every project before this one: `defmt-serial` logging, `panic-persist` crash capture, no SWD probe.
 
@@ -65,8 +66,9 @@ GP27 ── pot #2 wiper
 GP12 ── reboot-to-bootloader button
 ```
 
-BME280 is at I²C address `0x76` (some boards ship at `0x77` — run the bus scanner from `firmware/examples/i2c_scan.rs` 
-if it isn't found). Each breakout carries its own pull-ups; 
+The BME280 typically uses I²C address 0x76; some boards ship at 0x77. If it is not found, run the bus scanner in `firmware/examples/i2c_scan.rs`.
+
+Each breakout carries its own pull-ups; 
 two devices in parallel is still comfortably within range at 3.3 V.
 ## Quickstart
 
@@ -89,38 +91,50 @@ and pick back up on its own once you reconnect it.
 
 ## Architecture
 
-```
+```text
 pico-weather-station/
-├── crates/station-core/    # no_std-compatible, zero HAL deps
-│   └── src/lib.rs          #   dew_point_c(), sea_level_pressure() — host-tested
-└── firmware/
-    └── src/
-    │   ├── main.rs         # wiring: shared I2C bus, page state machine, error handling
-    └── examples/
-        └── i2c_scan.rs # bus scanner — your diagnostic tool if a device goes missing
+├── crates/
+│   └── station-core/
+│       └── src/
+│           └── lib.rs        # dew_point_c(), sea_level_pressure(), ADC/math helpers
+├── firmware/
+│   ├── build.rs
+│   ├── memory.x
+│   ├── examples/
+│   │   └── i2c_scan.rs       # bus scanner for diagnosing missing devices
+│   └── src/
+│       ├── main.rs           # shared I2C bus, USB logging, sensor polling, display loop
+│       ├── app.rs            # app state, calibration, min/max tracking, interval logic
+│       ├── debouncer.rs      # button debounce and click/hold handling
+│       └── ui/
+│           ├── mod.rs        # page state machine + freeze/error state
+│           └── render.rs     # OLED rendering for each page
 ```
 
-`station-core` holds the two pieces of real math this project needs (dew point via the Magnus formula, sea-level-adjusted pressure) — both pure functions, both tested against known reference values on the host, same pattern as `pot-core`'s `raw_to_percent`. Everything involving the shared I²C bus, sensor error handling, and page rendering stays in `firmware`, since none of it can be meaningfully tested without real hardware.
-
+`station-core` contains the pure, host-testable no std compatible logic for the project: dew point via the Magnus formula, sea-level-adjusted pressure, ADC scaling, and the min/max/history utilities. The hardware-facing code stays in `firmware`, including the shared I²C bus, sensor fault handling, USB logging, and OLED rendering, because those behaviors depend on real hardware and cannot be validated meaningfully on a host-only runner.
 
 ## Testing
 
+To run host-side math tests:
 ```bash
 cargo test -p station-core --target x86_64-unknown-linux-gnu
 ```
 
-`firmware/` has no host tests — the shared-bus behavior and fault recovery
-specifically need real hardware (and a real fault, i.e. an unplugged wire) to 
-verify.
+`firmware/` has no host tests — the shared-bus behavior and fault recovery specifically need real hardware (and a real fault, such as an unplugged wire) to verify.
 
-But if you want to test and scan the i2c bus:
+If you want to scan the I²C bus from another terminal, run:
 
-Run the i2c shell script in another terminal to catch then:
 ```bash
 cd firmware
 cargo run --example i2c_scan
 ```
 
+## Design choices
+
+- A 0.5–5 s sampling interval is appropriate for a weather station intended to run for hours. It keeps the sensor load low while still providing enough temporal resolution to observe meaningful changes in temperature, humidity, and pressure.
+- The freeze toggle pauses the UI page selection so the current screen remains readable, but it does not stop sensor sampling or min/max tracking. This lets the user inspect the display without losing ongoing measurements.
+
+---
 ## Known limitations
 
 - The BME280 must be powered from 3.3 V only; never feed it from 5 V.
