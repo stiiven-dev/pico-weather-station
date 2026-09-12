@@ -67,20 +67,19 @@ impl embedded_io::Write for DefmtUsbWriter {
     fn write(&mut self, buf: &[u8]) -> Result<usize, Self::Error> {
         let mut written = 0;
         let mut idle_polls = 0u32;
-        const MAX_IDLE_POLLS: u32 = 20; // lowered from 200 — defense in depth, see below
+        const MAX_IDLE_POLLS: u32 = 2_000;
 
         while written < buf.len() && idle_polls < MAX_IDLE_POLLS {
+            let mut give_up = false;
+
             critical_section::with(|cs| {
                 if let Some((usb_dev, serial)) = USB_STATE.borrow_ref_mut(cs).as_mut() {
                     usb_dev.poll(&mut [serial]);
 
-                    // No terminal has opened the port — bail immediately
-                    // rather than retrying.
-                    if !serial.dtr() {
-                        idle_polls = MAX_IDLE_POLLS;
-                        return;
-                    }
-
+                    // No more dtr() check — just try to write and let
+                    // WouldBlock accumulation decide when to give up.
+                    // This works identically whether the host tool raises
+                    // the (purely virtual, tool-dependent) DTR line or not.
                     match serial.write(&buf[written..]) {
                         Ok(n) if n > 0 => {
                             written += n;
@@ -89,12 +88,19 @@ impl embedded_io::Write for DefmtUsbWriter {
                         Ok(_) | Err(UsbError::WouldBlock) => {
                             idle_polls += 1;
                         }
-                        Err(_) => idle_polls = MAX_IDLE_POLLS,
+                        Err(_) => give_up = true,
                     }
+                } else {
+                    give_up = true;
                 }
             });
+
+            if give_up {
+                break;
+            }
         }
-        Ok(buf.len())
+
+        Ok(if written == 0 { buf.len() } else { written })
     }
 
     fn flush(&mut self) -> Result<(), Self::Error> {
@@ -146,8 +152,8 @@ fn main() -> ! {
         &mut pac.RESETS,
         &mut watchdog,
     )
-    .ok()
-    .unwrap();
+        .ok()
+        .unwrap();
 
     //SIO gives access to GPIO
     let sio = Sio::new(pac.SIO);
@@ -232,7 +238,7 @@ fn main() -> ! {
         HOLD_TICKS,
         now0,
     )
-    .unwrap();
+        .unwrap();
 
     let mut app = AppState::new();
     let mut button_last_time = 0u64;
